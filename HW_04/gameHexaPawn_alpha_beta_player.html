@@ -286,7 +286,7 @@
             return null;
         }
 
-        // ================= ALPHA-BETA AI ================= //
+        // ----------------------------------------------------------------------------------------------------------------------------------------------------//
 
         function cloneBoard(board) {
             return board.map(row => [...row]);
@@ -312,9 +312,7 @@
             for (let r = 0; r < BOARD_SIZE; r++) {
                 for (let c = 0; c < BOARD_SIZE; c++) {
                     if (board[r][c] === BLACK_PAWN) {
-                       
-                        score += 500; 
-
+                        score += 10;
                         score += r * 10; 
                     } else if (board[r][c] === WHITE_PAWN) {
                         score -= 100;
