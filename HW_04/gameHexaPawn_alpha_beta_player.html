@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hexapawn Game with Aggressive Alpha-Beta AI</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #fef7ed 0%, #fed7aa 100%);
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .game-container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            padding: 32px;
+            max-width: 400px;
+            width: 100%;
+        }
+        
+        .game-title {
+            font-size: 2rem;
+            font-weight: bold;
+            text-align: center;
+            margin-bottom: 24px;
+            color: #374151;
+        }
+        
+        .game-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            font-size: 1.125rem;
+            font-weight: 600;
+        }
+        
+        .game-status {
+            margin-bottom: 24px;
+            padding: 16px;
+            background: #dcfce7;
+            border: 1px solid #4ade80;
+            border-radius: 8px;
+            text-align: center;
+            font-size: 1.25rem;
+            font-weight: bold;
+            color: #166534;
+            display: none;
+        }
+        
+        .board {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 4px;
+            background: #374151;
+            padding: 8px;
+            border-radius: 8px;
+            margin: 0 auto 24px auto;
+            width: fit-content;
+        }
+        
+        .square {
+            width: 80px;
+            height: 80px;
+            border: 2px solid #9ca3af;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.5rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            user-select: none;
+        }
+        
+        .square.light {
+            background: #fef3c7;
+        }
+        
+        .square.dark {
+            background: #fde68a;
+        }
+        
+        .square.selected {
+            ring: 4px solid #60a5fa;
+            background: #bfdbfe !important;
+        }
+        
+        .square.valid-move {
+            ring: 2px solid #4ade80;
+            background: #bbf7d0 !important;
+        }
+        
+        .square:hover {
+            opacity: 0.8;
+        }
+        
+        .white-pawn {
+            color: white;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+        
+        .black-pawn {
+            color: #374151;
+        }
+        
+        .controls {
+            text-align: center;
+            margin-bottom: 16px;
+        }
+        
+        .new-game-btn {
+            padding: 12px 24px;
+            background: #3b82f6;
+            color: white;
+            font-weight: 600;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        
+        .new-game-btn:hover {
+            background: #2563eb;
+        }
+        
+        .rules {
+            font-size: 0.875rem;
+            color: #6b7280;
+            line-height: 1.5;
+        }
+        
+        .rules-title {
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        
+        .rule-item {
+            margin-bottom: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <h1 class="game-title">Hexapawn</h1>
+        
+        <div class="game-info">
+            <div>
+                Current Player: <span id="current-player">♙ White</span>
+            </div>
+        </div>
+
+        <div id="game-status" class="game-status">
+            Game Over! <span id="winner"></span> Wins!
+        </div>
+
+        <div id="board" class="board"></div>
+
+        <div class="controls">
+            <button class="new-game-btn" onclick="resetGame()">New Game</button>
+        </div>
+        
+        <div class="rules">
+            <div class="rules-title">How to Play:</div>
+            <div class="rule-item">• You are White (♙), AI is Black (♟)</div>
+            <div class="rule-item">• Pawns move forward one square or capture diagonally</div>
+            <div class="rule-item">• Win by reaching the opposite end or capturing all enemy pawns</div>
+        </div>
+    </div>
+
+    <script>
+        // Game constants
+        const BOARD_SIZE = 3;
+        const EMPTY = 0;
+        const WHITE_PAWN = 1;
+        const BLACK_PAWN = 2;
+
+        // Game state
+        let board = [
+            [BLACK_PAWN, BLACK_PAWN, BLACK_PAWN],
+            [EMPTY, EMPTY, EMPTY],
+            [WHITE_PAWN, WHITE_PAWN, WHITE_PAWN]
+        ];
+        let currentPlayer = WHITE_PAWN;
+        let selectedSquare = null;
+        let gameStatus = 'playing';
+        let winner = null;
+        let validMoves = [];
+
+        // Utility functions
+        function getPieceSymbol(piece) {
+            switch (piece) {
+                case WHITE_PAWN: return '♙';
+                case BLACK_PAWN: return '♟';
+                default: return '';
+            }
+        }
+
+        function getPieceClass(piece) {
+            switch (piece) {
+                case WHITE_PAWN: return 'white-pawn';
+                case BLACK_PAWN: return 'black-pawn';
+                default: return '';
+            }
+        }
+
+        function isValidMove(fromRow, fromCol, toRow, toCol, board, player) {
+            if (toRow < 0 || toRow >= BOARD_SIZE || toCol < 0 || toCol >= BOARD_SIZE) {
+                return false;
+            }
+
+            if (board[fromRow][fromCol] !== player) {
+                return false;
+            }
+
+            const direction = player === WHITE_PAWN ? -1 : 1;
+            const rowDiff = toRow - fromRow;
+            const colDiff = Math.abs(toCol - fromCol);
+
+            // Forward move
+            if (colDiff === 0 && rowDiff === direction && board[toRow][toCol] === EMPTY) {
+                return true;
+            }
+
+            // Diagonal capture
+            if (colDiff === 1 && rowDiff === direction && board[toRow][toCol] !== EMPTY && board[toRow][toCol] !== player) {
+                return true;
+            }
+
+            return false;
+        }
+
+        function getAllValidMoves(board, player) {
+            const moves = [];
+            for (let row = 0; row < BOARD_SIZE; row++) {
+                for (let col = 0; col < BOARD_SIZE; col++) {
+                    if (board[row][col] === player) {
+                        for (let newRow = 0; newRow < BOARD_SIZE; newRow++) {
+                            for (let newCol = 0; newCol < BOARD_SIZE; newCol++) {
+                                if (isValidMove(row, col, newRow, newCol, board, player)) {
+                                    moves.push({ from: [row, col], to: [newRow, newCol] });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return moves;
+        }
+
+        function checkGameEnd(board, player) {
+            // Check if player has no pawns left
+            const playerPawns = board.flat().filter(cell => cell === player).length;
+            if (playerPawns === 0) {
+                return player === WHITE_PAWN ? BLACK_PAWN : WHITE_PAWN;
+            }
+
+            // Check if any pawn reached the opposite end
+            if (player === WHITE_PAWN) {
+                for (let col = 0; col < BOARD_SIZE; col++) {
+                    if (board[0][col] === WHITE_PAWN) {
+                        return WHITE_PAWN;
+                    }
+                }
+            } else {
+                for (let col = 0; col < BOARD_SIZE; col++) {
+                    if (board[BOARD_SIZE - 1][col] === BLACK_PAWN) {
+                        return BLACK_PAWN;
+                    }
+                }
+            }
+
+            // Check if player has no valid moves
+            const moves = getAllValidMoves(board, player);
+            if (moves.length === 0) {
+                return player === WHITE_PAWN ? BLACK_PAWN : WHITE_PAWN;
+            }
+
+            return null;
+        }
+
+        // ================= ALPHA-BETA AI ================= //
+
+        function cloneBoard(board) {
+            return board.map(row => [...row]);
+        }
+
+        function applyMove(board, move, player) {
+            const newBoard = cloneBoard(board);
+            newBoard[move.to[0]][move.to[1]] = newBoard[move.from[0]][move.from[1]];
+            newBoard[move.from[0]][move.from[1]] = EMPTY;
+            return newBoard;
+        }
+
+        
+        function evaluateBoard(board, depth) {
+            const endState = checkGameEnd(board, BLACK_PAWN) || checkGameEnd(board, WHITE_PAWN);
+            
+            
+            if (endState === BLACK_PAWN) return 1000 + depth;
+            if (endState === WHITE_PAWN) return -1000 - depth;
+
+            let score = 0;
+
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                for (let c = 0; c < BOARD_SIZE; c++) {
+                    if (board[r][c] === BLACK_PAWN) {
+                       
+                        score += 500; 
+
+                        score += r * 10; 
+                    } else if (board[r][c] === WHITE_PAWN) {
+                        score -= 100;
+                        score -= (2 - r) * 10;
+                    }
+                }
+            }
+
+            return score;
+        }
+
+        function minimax(board, depth, alpha, beta, isMaximizing) {
+            const currentPlayerCheck = isMaximizing ? BLACK_PAWN : WHITE_PAWN;
+            const winnerCheck = checkGameEnd(board, currentPlayerCheck);
+            
+            if (winnerCheck !== null || depth === 0) {
+                return { score: evaluateBoard(board, depth) };
+            }
+
+            const moves = getAllValidMoves(board, currentPlayerCheck);
+            
+            if (isMaximizing) {
+                let maxEval = -Infinity;
+                let bestMove = null;
+                for (const move of moves) {
+                    const nextBoard = applyMove(board, move, BLACK_PAWN);
+                    const evaluation = minimax(nextBoard, depth - 1, alpha, beta, false).score;
+                    if (evaluation > maxEval) {
+                        maxEval = evaluation;
+                        bestMove = move;
+                    }
+                    alpha = Math.max(alpha, evaluation);
+                    if (beta <= alpha) break; 
+                }
+                return { score: maxEval, move: bestMove };
+            } else {
+                let minEval = Infinity;
+                let bestMove = null;
+                for (const move of moves) {
+                    const nextBoard = applyMove(board, move, WHITE_PAWN);
+                    const evaluation = minimax(nextBoard, depth - 1, alpha, beta, true).score;
+                    if (evaluation < minEval) {
+                        minEval = evaluation;
+                        bestMove = move;
+                    }
+                    beta = Math.min(beta, evaluation);
+                    if (beta <= alpha) break; 
+                }
+                return { score: minEval, move: bestMove };
+            }
+        }
+
+        function makeAIMove() {
+            if (gameStatus !== 'playing' || currentPlayer !== BLACK_PAWN) return;
+
+            const result = minimax(board, 6, -Infinity, Infinity, true);
+            
+            if (result.move) {
+                makeMove(
+                    result.move.from[0], 
+                    result.move.from[1], 
+                    result.move.to[0], 
+                    result.move.to[1]
+                );
+            }
+        }
+
+        function makeMove(fromRow, fromCol, toRow, toCol) {
+            board[toRow][toCol] = board[fromRow][fromCol];
+            board[fromRow][fromCol] = EMPTY;
+
+            currentPlayer = currentPlayer === WHITE_PAWN ? BLACK_PAWN : WHITE_PAWN;
+
+            const gameWinner = checkGameEnd(board, currentPlayer);
+            if (gameWinner) {
+                winner = gameWinner;
+                gameStatus = 'ended';
+                document.getElementById('game-status').style.display = 'block';
+                document.getElementById('winner').textContent = winner === WHITE_PAWN ? 'White (Human)' : 'Black (AI)';
+            }
+
+            updateDisplay();
+
+            if (currentPlayer === BLACK_PAWN && gameStatus === 'playing') {
+                setTimeout(makeAIMove, 400);
+            }
+        }
+
+        function handleSquareClick(row, col) {
+            if (gameStatus !== 'playing' || currentPlayer !== WHITE_PAWN) return;
+
+            if (selectedSquare) {
+                const [selectedRow, selectedCol] = selectedSquare;
+                
+                if (selectedRow === row && selectedCol === col) {
+                    selectedSquare = null;
+                    validMoves = [];
+                } else if (isValidMove(selectedRow, selectedCol, row, col, board, currentPlayer)) {
+                    makeMove(selectedRow, selectedCol, row, col);
+                    selectedSquare = null;
+                    validMoves = [];
+                    return;
+                } else {
+                    if (board[row][col] === currentPlayer) {
+                        selectedSquare = [row, col];
+                        validMoves = [];
+                        for (let newRow = 0; newRow < BOARD_SIZE; newRow++) {
+                            for (let newCol = 0; newCol < BOARD_SIZE; newCol++) {
+                                if (isValidMove(row, col, newRow, newCol, board, currentPlayer)) {
+                                    validMoves.push([newRow, newCol]);
+                                }
+                            }
+                        }
+                    } else {
+                        selectedSquare = null;
+                        validMoves = [];
+                    }
+                }
+            } else {
+                if (board[row][col] === currentPlayer) {
+                    selectedSquare = [row, col];
+                    validMoves = [];
+                    for (let newRow = 0; newRow < BOARD_SIZE; newRow++) {
+                        for (let newCol = 0; newCol < BOARD_SIZE; newCol++) {
+                            if (isValidMove(row, col, newRow, newCol, board, currentPlayer)) {
+                                validMoves.push([newRow, newCol]);
+                            }
+                        }
+                    }
+                }
+            }
+
+            updateDisplay();
+        }
+
+        function resetGame() {
+            board = [
+                [BLACK_PAWN, BLACK_PAWN, BLACK_PAWN],
+                [EMPTY, EMPTY, EMPTY],
+                [WHITE_PAWN, WHITE_PAWN, WHITE_PAWN]
+            ];
+            currentPlayer = WHITE_PAWN;
+            selectedSquare = null;
+            gameStatus = 'playing';
+            winner = null;
+            validMoves = [];
+            document.getElementById('game-status').style.display = 'none';
+            updateDisplay();
+        }
+
+        function isSquareSelected(row, col) {
+            return selectedSquare && selectedSquare[0] === row && selectedSquare[1] === col;
+        }
+
+        function isSquareValidMove(row, col) {
+            return validMoves.some(([r, c]) => r === row && c === col);
+        }
+
+        function updateDisplay() {
+            const playerSymbol = getPieceSymbol(currentPlayer);
+            const playerName = currentPlayer === WHITE_PAWN ? 'White (Human)' : 'Black (AI)';
+            document.getElementById('current-player').textContent = `${playerSymbol} ${playerName}`;
+
+            const boardElement = document.getElementById('board');
+            boardElement.innerHTML = '';
+
+            for (let row = 0; row < BOARD_SIZE; row++) {
+                for (let col = 0; col < BOARD_SIZE; col++) {
+                    const square = document.createElement('div');
+                    square.className = 'square';
+                    
+                    if ((row + col) % 2 === 0) {
+                        square.classList.add('light');
+                    } else {
+                        square.classList.add('dark');
+                    }
+
+                    if (isSquareSelected(row, col)) {
+                        square.classList.add('selected');
+                    } else if (isSquareValidMove(row, col)) {
+                        square.classList.add('valid-move');
+                    }
+
+                    const piece = board[row][col];
+                    if (piece !== EMPTY) {
+                        square.innerHTML = `<span class="${getPieceClass(piece)}">${getPieceSymbol(piece)}</span>`;
+                    }
+
+                    square.addEventListener('click', () => handleSquareClick(row, col));
+                    boardElement.appendChild(square);
+                }
+            }
+        }
+
+        // Initialize the game
+        updateDisplay();
+    </script>
+</body>
+</html>
